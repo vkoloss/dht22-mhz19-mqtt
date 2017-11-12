@@ -45,17 +45,15 @@ void setup_wifi() {
 
 void reconnect() {
   // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
+  Serial.print("Connecting to MQTT");
+  int i = 0;
+  while (!client.connected() && i < 3) {
+    // Attempt to connect, connection on it's own takes some time
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password)) {
-      Serial.println("connected");
+      Serial.println("MQTT connected");
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
+      Serial.print(".");
+      i++;
     }
   }
 }
@@ -75,8 +73,6 @@ int readCO2()
   memset(response, 0, 9);
   co2Serial.readBytes(response, 9);
 
-  Serial.println(response[0]);
-    Serial.println(response[1]);
   if (response[1] != 0x86) {
     Serial.println("Invalid response from co2 sensor!");
     return -1;
@@ -107,9 +103,10 @@ float diff = 1.0;
 void loop() {
   if (!client.connected()) {
     reconnect();
+  } else {
+    client.loop();
   }
-  client.loop();
-
+  
   long now = millis();
   if (now - lastMsg > 30000) {
     lastMsg = now;
@@ -120,14 +117,16 @@ void loop() {
     if (!isnan(temp) && !isnan(hum)) {
       Serial.println("temperature = " + String(temp));
       Serial.println("humidity = " + String(hum));
-      client.publish("domoticz/in", ("{\"idx\": "+ temp_hum_idx + ", \"svalue\": \""+String(temp)+";"+String(hum)+";0\"}").c_str(), true);
+      if (client.connected()) { 
+        client.publish("domoticz/in", ("{\"idx\": "+ temp_hum_idx + ", \"svalue\": \""+String(temp)+";"+String(hum)+";0\"}").c_str(), true);
+      }
     } else {
       Serial.println("DHT error!");
     }
     
     int ppm = readCO2();
-    if (ppm > 400) {
-      Serial.println("PPM = " + String(ppm));
+    Serial.println("PPM = " + String(ppm));
+    if (ppm > 400 && client.connected()) {
       client.publish("domoticz/in", ("{\"idx\": "+ co2_idx + ", \"nvalue\": "+ppm+"}").c_str(), true);
     }
   }
